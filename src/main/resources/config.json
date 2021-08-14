@@ -1,0 +1,4 @@
+{
+  "port": 3000,
+  "target-server": "lobby-[1/2/3]"
+}
