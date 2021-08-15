@@ -8,6 +8,8 @@ import me.maiky.util.DataTypeIO;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 
 /**
  * This project is owned by Maiky Perlee - © 2021
@@ -15,17 +17,19 @@ import java.io.IOException;
 
 @PacketId(0x01)
 @AllArgsConstructor
-public class PacketPongOut extends PacketOut {
+public class PacketLoginSuccessOut extends PacketOut {
 
-    private final long payload;
+    private final UUID uuid;
+    private final String username;
 
     @Override
     public byte[] serializePacket() throws IOException {
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
 
         DataOutputStream output = new DataOutputStream(buffer);
-        output.writeByte(0x01);
-        DataTypeIO.writeVarLong(output, payload);
+        output.writeByte(0x02);
+        DataTypeIO.writeUUID(output, this.uuid);
+        DataTypeIO.writeString(output, this.username, StandardCharsets.UTF_8);
 
         return buffer.toByteArray();
     }

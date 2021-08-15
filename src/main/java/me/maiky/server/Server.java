@@ -52,7 +52,7 @@ public class Server {
 
             while(true) {
                 Socket connection = serverSocket.accept();
-                Connection sc = new Connection(connection);
+                Connection sc = new Connection(this, connection);
                 this.clients.add(sc);
                 sc.start();
             }
