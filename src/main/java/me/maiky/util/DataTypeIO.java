@@ -1,5 +1,9 @@
 package me.maiky.util;
 
+import net.querz.nbt.io.NBTOutputStream;
+import net.querz.nbt.tag.CompoundTag;
+import net.querz.nbt.tag.Tag;
+
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -12,6 +16,16 @@ public class DataTypeIO {
 	public static void writeUUID(DataOutputStream out, UUID uuid) throws IOException {
 		out.writeLong(uuid.getMostSignificantBits());
 		out.writeLong(uuid.getLeastSignificantBits());
+	}
+
+	public static void writeCompoundTag(DataOutputStream out, CompoundTag tag) throws IOException {
+		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+
+		DataOutputStream output = new DataOutputStream(buffer);
+		new NBTOutputStream(output).writeTag(tag, Tag.DEFAULT_MAX_DEPTH);
+
+		byte[] b = buffer.toByteArray();
+		out.write(b);
 	}
 
 	

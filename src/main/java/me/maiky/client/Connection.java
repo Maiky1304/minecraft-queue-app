@@ -11,6 +11,8 @@ import me.maiky.packets.impl.PacketOut;
 import me.maiky.packets.in.PacketHandshakingIn;
 import me.maiky.packets.in.PacketLoginStartIn;
 import me.maiky.packets.in.PacketPingIn;
+import me.maiky.packets.in.PacketPluginMessageIn;
+import me.maiky.packets.out.PacketJoinGameOut;
 import me.maiky.packets.out.PacketLoginSuccessOut;
 import me.maiky.packets.out.PacketPongOut;
 import me.maiky.packets.out.PacketResponseOut;
@@ -38,7 +40,7 @@ public class Connection extends Thread {
 
     private final Socket socket;
 
-    private boolean running;
+    private boolean running, playerConnected;
 
     private State connectionState;
 
@@ -52,11 +54,13 @@ public class Connection extends Thread {
     private InetAddress address;
 
     public Connection(Server server, Socket socket) {
+        super(socket.getInetAddress().getHostName());
         this.server = server;
         this.socket = socket;
         this.address = socket.getInetAddress();
         this.lastKeepAlive = new AtomicLong();
         this.running = false;
+        this.playerConnected = false;
     }
 
     @Override
@@ -81,7 +85,7 @@ public class Connection extends Thread {
 
                 String ip = getAddress().getHostName() + ":" + socket.getPort();
 
-                System.out.println("[/" + ip + "] <-> Legacy Status has pinged (Possible API call)");
+                System.out.println("[/" + ip + "] <-> Legacy Status has pinged");
                 // TODO make supported
             }
 
@@ -97,9 +101,10 @@ public class Connection extends Thread {
             if (handshake.getHandshakeType() == null) return;
 
             try {
-                if (handshake.getHandshakeType() == PacketHandshakingIn.HandshakeType.STATUS) {
-                    connectionState = State.STATUS;
-                    while (socket.isConnected()) {
+                while(socket.isConnected()) {
+                    if (handshake.getHandshakeType() == PacketHandshakingIn.HandshakeType.STATUS) {
+                        connectionState = State.STATUS;
+
                         DataTypeIO.readVarInt(input);
                         int packetId = DataTypeIO.readVarInt(input);
 
@@ -118,33 +123,31 @@ public class Connection extends Thread {
                             sendPacket(out);
                             break;
                         }
-                    }
-                } else if (handshake.getHandshakeType() == PacketHandshakingIn.HandshakeType.LOGIN) {
-                    connectionState = State.LOGIN;
+                    } else if (handshake.getHandshakeType() == PacketHandshakingIn.HandshakeType.LOGIN) {
+                        connectionState = State.LOGIN;
 
-                    if (isBungeecord) {
-                        try {
-                            String[] data = bungeeForwarding.split("\\x00");
-                            //String host = data[0];
-                            String ip = data[1];
+                        if (isBungeecord) {
+                            try {
+                                String[] data = bungeeForwarding.split("\\x00");
+                                //String host = data[0];
+                                String ip = data[1];
 
-                            bungeeUUID = UUID.fromString(data[2].replaceFirst("([0-9a-fA-F]{8})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]+)", "$1-$2-$3-$4-$5"));
-                            address = InetAddress.getByName(ip);
+                                bungeeUUID = UUID.fromString(data[2].replaceFirst("([0-9a-fA-F]{8})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]+)", "$1-$2-$3-$4-$5"));
+                                address = InetAddress.getByName(ip);
 
-                            if (data.length > 3) {
-                                String skinJson = data[3];
+                                if (data.length > 3) {
+                                    String skinJson = data[3];
 
-                                String skin = skinJson.split("\"value\":\"")[1].split("\"")[0];
-                                String signature = skinJson.split("\"signature\":\"")[1].split("\"")[0];
-                                //bungeeSkin = new SkinResponse(skin, signature);
+                                    String skin = skinJson.split("\"value\":\"")[1].split("\"")[0];
+                                    String signature = skinJson.split("\"signature\":\"")[1].split("\"")[0];
+                                    //bungeeSkin = new SkinResponse(skin, signature);
+                                }
+                            } catch (Exception e) {
+                                //Limbo.getInstance().getConsole().sendMessage("If you wish to use bungeecord's IP forwarding, please enable that in your bungeecord config.yml as well!");
+                                //disconnectDuringLogin(new BaseComponent[]{new TextComponent(ChatColor.RED + "Please connect from the proxy!")});
                             }
-                        } catch (Exception e) {
-                            //Limbo.getInstance().getConsole().sendMessage("If you wish to use bungeecord's IP forwarding, please enable that in your bungeecord config.yml as well!");
-                            //disconnectDuringLogin(new BaseComponent[]{new TextComponent(ChatColor.RED + "Please connect from the proxy!")});
                         }
-                    }
 
-                    while (socket.isConnected()) {
                         int size = DataTypeIO.readVarInt(input);
                         int packetId = DataTypeIO.readVarInt(input);
 
@@ -169,18 +172,36 @@ public class Connection extends Thread {
                             input.skipBytes(size - DataTypeIO.getVarIntLength(packetId));
                         }
                     }
-                } else if (connectionState == State.PLAY) {
-                    while(socket.isConnected()) {
-                        int size = DataTypeIO.readVarInt(input);
-                        int packetId = DataTypeIO.readVarInt(input);
-
-                        if (packetId == )
-                    }
                 }
             } catch (IOException exception) {
                 exception.printStackTrace();
             }
         } catch (IOException ignored) {}
+
+        try {
+            if (connectionState == State.PLAY) {
+                System.out.println("sending 0x26");
+
+                PacketJoinGameOut packetJoinGameOut = new PacketJoinGameOut();
+                sendPacket(packetJoinGameOut);
+
+                this.playerConnected = true;
+
+                while (socket.isConnected()) {
+                    int size = DataTypeIO.readVarInt(input);
+                    int packetId = DataTypeIO.readVarInt(input);
+
+                    if (packetId == PacketPluginMessageIn.class.getAnnotation(PacketId.class).value()) {
+                        PacketPluginMessageIn in = new PacketPluginMessageIn(input, size, packetId);
+                        System.out.println(in);
+                    } else {
+                        input.skipBytes(size - DataTypeIO.getVarIntLength(packetId));
+                    }
+                }
+            }
+        } catch (IOException exception) {
+            exception.printStackTrace();
+        }
 
         try {
             connectionState = State.DISCONNECTED;
@@ -225,9 +246,10 @@ public class Connection extends Thread {
 
     public void sendPacket(PacketOut out) throws IOException {
         byte[] packetByte = out.serializePacket();
+        System.out.println(out);
         DataTypeIO.writeVarInt(output, packetByte.length);
         output.write(packetByte);
-        output.flush();;
+        output.flush();
     }
 
     public enum State {
